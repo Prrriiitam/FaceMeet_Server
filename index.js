@@ -12,7 +12,6 @@ dotenv.config();
 const { GOOGLE_CLIENT_ID, APP_JWT_SECRET } = process.env;
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -54,10 +53,32 @@ function dequeue(socketId) {
   if (ix !== -1) waitingQueue.splice(ix, 1);
 }
 
+
+const prefSet = (pref = "both") => {
+  if (pref === "male")   return ["male"];
+  if (pref === "female") return ["female"];
+  // "both" or anything else → accept any
+  return ["male", "female", "other"];
+};
+
+const isCompatible = (u, v) =>
+  prefSet(u.pref).includes(v.gender) &&
+  prefSet(v.pref).includes(u.gender);
+
 function tryPair(io) {
-  while (waitingQueue.length >= 2) {
-    const a = waitingQueue.shift();
-    const b = waitingQueue.shift();
+  for (let i = 0; i < waitingQueue.length; i++) {
+    for (let j = i + 1; j < waitingQueue.length; j++) {
+    const a = waitingQueue[i];
+    const b = waitingQueue[j];
+
+
+    if (!isCompatible(a, b)) continue;
+
+    // --- Found a match ---
+    waitingQueue.splice(j, 1);       // remove j first (higher index)
+    waitingQueue.splice(i, 1);       // remove i
+
+
     const roomId = uuid();
     activeRooms.set(roomId, { a: a.socketId, b: b.socketId });
 
@@ -87,21 +108,30 @@ function tryPair(io) {
     // Join both to the same room
     io.sockets.sockets.get(a.socketId)?.join(roomId);
     io.sockets.sockets.get(b.socketId)?.join(roomId);
+  
+    // Queue changed → restart scan
+    return tryPair(io);
+  }
   }
 }
 
 io.on("connection", (socket) => {
   console.log(`Socket Connected`, socket.id, "for user:", socket.user.email);
+  socket.emit("stats:usercount", io.engine.clientsCount);
+  io.emit("stats:usercount", io.engine.clientsCount);
+
+  
 
   // User clicks "Do a call"
-  socket.on("queue:join", ({ age, gender }) => {
+  socket.on("queue:join", ({ age, gender, pref }) => {
     dequeue(socket.id);
     waitingQueue.push({ 
       socketId: socket.id, 
       email: socket.user.email,
       name: socket.user.name,
       age, 
-      gender 
+      gender,
+      pref
     });
     tryPair(io);
   });
@@ -131,7 +161,10 @@ socket.on("queue:leave", () => {
   });
 
   // Clean up on disconnect
-  socket.on("disconnect", () => dequeue(socket.id));
+  socket.on("disconnect", () => {
+    io.emit("stats:usercount", io.engine.clientsCount);
+    dequeue(socket.id)
+  });
 
   socket.on("user:call", ({ to, offer }) => {
     io.to(to).emit("incomming:call", { from: socket.id, offer });
@@ -180,6 +213,12 @@ app.get("/api/me", (req, res) => {
     res.status(401).json({ error: "Bad or expired token" });
   }
 });
+
+// Public endpoint for live user count
+app.get("/api/live-users", (req, res) => {
+  res.json({ count: io.engine.clientsCount });
+});
+
 
 httpServer.listen(5000, () => console.log("Server running on http://localhost:5000"));
 
