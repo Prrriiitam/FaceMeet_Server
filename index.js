@@ -224,13 +224,6 @@ app.get("/api/live-users", (req, res) => {
 
 httpServer.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 
-setInterval(() => {
-  console.log("Current waitingQueue:", waitingQueue.map(u => ({
-    socketId: u.socketId,
-    email: u.email,
-    name: u.name
-  })));
-}, 15000);
 
 
 
