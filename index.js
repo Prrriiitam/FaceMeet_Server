@@ -10,19 +10,21 @@ const { v4: uuid } = require("uuid");
 
 dotenv.config();
 const { GOOGLE_CLIENT_ID, APP_JWT_SECRET } = process.env;
+const FRONTEND_ORIGIN = process.env.CLIENT_URL || "http://localhost:3000";
+const PORT = process.env.PORT || 5000;
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: FRONTEND_ORIGIN,
     methods: ["GET", "POST"],
     credentials: true
   }
 });
 
-app.use(cors({ origin: "http://localhost:3000", credentials: true }));
+app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -220,7 +222,7 @@ app.get("/api/live-users", (req, res) => {
 });
 
 
-httpServer.listen(5000, () => console.log("Server running on http://localhost:5000"));
+httpServer.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 
 setInterval(() => {
   console.log("Current waitingQueue:", waitingQueue.map(u => ({
