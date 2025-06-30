@@ -20,6 +20,7 @@
     "onnxruntime-node": "^1.22.0-rev",
     "socket.io": "^4.7.5",
     "tokenizers": "^0.13.3",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "tokenizers-linux-x64-gnu": "0.13.4-rc1"
   }
 }
