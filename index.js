@@ -1,3 +1,4 @@
+const { isAbusive, initialize } = require("./moderation.js");   // (<‑‑ ESM) see §4 for CJS
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -7,6 +8,33 @@ const jwt = require("jsonwebtoken");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 const { v4: uuid } = require("uuid");
+
+// Initialize with retries
+async function initializeModeration() {
+  const maxRetries = 3;
+  let lastError;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await initialize();
+      return true;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Moderation init attempt ${i + 1} failed, retrying...`);
+      await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
+    }
+  }
+  
+  console.error("FATAL: Failed to initialize moderation after retries:", lastError);
+  return false;
+}
+
+// Before server starts
+initializeModeration().then(success => {
+  if (!success) {
+    console.error("Exiting due to moderation system failure");
+    process.exit(1);
+  }});
 
 dotenv.config();
 const { GOOGLE_CLIENT_ID, APP_JWT_SECRET } = process.env;
@@ -122,6 +150,27 @@ io.on("connection", (socket) => {
   socket.emit("stats:usercount", io.engine.clientsCount);
   io.emit("stats:usercount", io.engine.clientsCount);
 
+  socket.on("chat:send", async ({ roomId, text, replyTo }) => {
+  // ignore empty / whitespace
+  if (!text?.trim()) return;
+
+  const msg = {
+      id: uuid(),
+      text: text.trim(),
+      senderId: socket.id,
+      senderName: socket.user.name,
+      ts: Date.now(),
+      replyTo: replyTo || null,    // Ensure replyTo is never undefined
+    };
+    io.to(roomId).emit("chat:message", msg);  // broadcast to *all*, incl. sender
+  });
+
+  socket.on("file:send", ({ roomId, ...file }) => {
+  // Quick guard against big or suspicious payloads
+  if (file.size > 300_000 || !/^image\/(png|jpe?g|gif)$/i.test(file.type)) return;
+  socket.to(roomId).emit("file:receive", file);  // forward to peer only
+  });
+
   
 
   // User clicks "Do a call"
@@ -136,6 +185,54 @@ io.on("connection", (socket) => {
       pref
     });
     tryPair(io);
+  });
+
+  const moderationCache = new Map();
+  const reportedMessages = new Set();   // messageId that was reported once
+
+  socket.on("message:report", async ({ roomId, messageId, text, senderId }) => {
+    // 1️⃣ Validate reporter is actually in that room
+    const rooms = [...socket.rooms];                 // Set → Array
+    if (!rooms.includes(roomId)) return;  
+    // If someone already reported this message → notify reporter & bail
+    if (reportedMessages.has(messageId)) {
+      socket.emit("abuse:alreadyReported", { messageId });
+      return;
+    }
+    
+
+    try {
+      // 2️⃣ Check cache first
+      reportedMessages.add(messageId);
+      if (!moderationCache.has(messageId)) {
+        const abusive = await isAbusive(text);
+        moderationCache.set(messageId, { abusive, checked: true });
+      }
+
+      const { abusive } = moderationCache.get(messageId);
+
+      if (abusive) {
+        // ✔️ Broadcast once; include who was flagged
+        io.to(roomId).emit("abuse:detected", {
+          offenderId: senderId,
+          offenderName:
+            io.sockets.sockets.get(senderId)?.user?.name || "Unknown",
+          messageId,
+        });
+        console.log(`Message ${messageId} flagged as abusive`);
+      } else {
+        // ✉️ Tell the reporter the message is clean
+        socket.emit("abuse:cleared", { offenderId: senderId,
+          offenderName: io.sockets.sockets.get(senderId)?.user?.name || "Unknown",
+          messageId });
+      }
+    } catch (err) {
+      console.error("Moderation failed:", err);
+      socket.emit("abuse:error", {
+        messageId,
+        msg: "Moderation service unavailable",
+      });
+    }
   });
 
 // ───────── queue:leave (user cancelled waiting or aborted the call) ─────────
