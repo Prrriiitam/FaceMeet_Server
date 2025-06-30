@@ -20,7 +20,6 @@
     "onnxruntime-node": "^1.22.0-rev",
     "socket.io": "^4.7.5",
     "tokenizers": "^0.13.3",
-    "tokenizers-win32-x64-msvc": "^0.13.4-rc1",
     "uuid": "^11.1.0"
   }
 }
