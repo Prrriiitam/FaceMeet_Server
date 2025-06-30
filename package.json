@@ -11,7 +11,6 @@
   "license": "ISC",
   "dependencies": {
     "@react-oauth/google": "^0.12.2",
-    "@xenova/transformers": "^2.17.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
@@ -20,6 +19,8 @@
     "jsonwebtoken": "^9.0.2",
     "onnxruntime-node": "^1.22.0-rev",
     "socket.io": "^4.7.5",
+    "tokenizers": "^0.13.3",
+    "tokenizers-win32-x64-msvc": "^0.13.4-rc1",
     "uuid": "^11.1.0"
   }
 }

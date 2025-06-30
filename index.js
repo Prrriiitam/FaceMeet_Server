@@ -1,4 +1,4 @@
-const { isAbusive, initialize } = require("./moderation.js");   // (<‑‑ ESM) see §4 for CJS
+const { loadModel, moderate } = require("./moderation");
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -9,32 +9,14 @@ const { createServer } = require("http");
 const { Server } = require("socket.io");
 const { v4: uuid } = require("uuid");
 
-// Initialize with retries
-async function initializeModeration() {
-  const maxRetries = 3;
-  let lastError;
-  
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      await initialize();
-      return true;
-    } catch (err) {
-      lastError = err;
-      console.warn(`Moderation init attempt ${i + 1} failed, retrying...`);
-      await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
-    }
-  }
-  
-  console.error("FATAL: Failed to initialize moderation after retries:", lastError);
-  return false;
-}
+(async () => {
+  await loadModel();
 
-// Before server starts
-initializeModeration().then(success => {
-  if (!success) {
-    console.error("Exiting due to moderation system failure");
-    process.exit(1);
-  }});
+  const sampleText = "kill you";
+  const isToxic = await moderate(sampleText);
+
+  console.log(`Toxic: ${isToxic}`); // 🔴 should log: Toxic: true
+})();
 
 dotenv.config();
 const { GOOGLE_CLIENT_ID, APP_JWT_SECRET } = process.env;
@@ -204,13 +186,17 @@ io.on("connection", (socket) => {
     try {
       // 2️⃣ Check cache first
       reportedMessages.add(messageId);
-      if (!moderationCache.has(messageId)) {
-        const abusive = await isAbusive(text);
+      let abusive;
+      if (moderationCache.has(messageId)) {
+        abusive = moderationCache.get(messageId).abusive;
+        console.log(`Message ${messageId} found in cache. Abusive: ${abusive}`);
+      }else {
+        // Use your imported 'moderate' function here!
+        abusive = await moderate(text);
         moderationCache.set(messageId, { abusive, checked: true });
+        console.log(`Message ${messageId} moderated. Abusive: ${abusive}`);
       }
-
-      const { abusive } = moderationCache.get(messageId);
-
+      
       if (abusive) {
         // ✔️ Broadcast once; include who was flagged
         io.to(roomId).emit("abuse:detected", {
