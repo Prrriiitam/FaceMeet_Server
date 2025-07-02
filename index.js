@@ -1,3 +1,6 @@
+//"tokenizers-linux-x64-gnu": "0.13.4-rc1"
+//"tokenizers-win32-x64-msvc": "^0.13.4-rc1",
+
 const { loadModel, moderate } = require("./moderation");
 const express = require("express");
 const cors = require("cors");
@@ -8,6 +11,11 @@ const jwt = require("jsonwebtoken");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 const { v4: uuid } = require("uuid");
+
+const connectDB = require('./db');
+connectDB();
+const User = require('./schemas/User');
+
 
 (async () => {
   await loadModel();
@@ -37,6 +45,8 @@ const io = new Server(httpServer, {
 app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
+app.use("/api/issues", require("./routes/issues"));
+
 
 // Socket.io authentication middleware
 io.use((socket, next) => {
@@ -198,11 +208,24 @@ io.on("connection", (socket) => {
       }
       
       if (abusive) {
+        /* 2️⃣ — decrement honor of the offender */
+        const offenderSocket = io.sockets.sockets.get(senderId);
+        const offenderUid    = offenderSocket?.user?.uid;   // googleId stored in JWT
         // ✔️ Broadcast once; include who was flagged
+        let newHonor = null;
+        if (offenderUid) {
+          const updated = await User.findOneAndUpdate(
+            { googleId: offenderUid },
+            { $inc: { honor: -1 } },
+            { new: true, projection: { honor: 1 } }
+          );
+          newHonor = updated?.honor ?? null;
+        }
         io.to(roomId).emit("abuse:detected", {
           offenderId: senderId,
           offenderName:
             io.sockets.sockets.get(senderId)?.user?.name || "Unknown",
+          honor : newHonor,            
           messageId,
         });
         console.log(`Message ${messageId} flagged as abusive`);
@@ -276,9 +299,15 @@ app.post("/api/google-login", async (req, res) => {
     const { sub: googleId, email, name, picture } = ticket.getPayload();
 
     // Mint JWT (2 hours)
-    const appToken = jwt.sign({ uid: googleId, email, name }, APP_JWT_SECRET, {
+    const appToken = jwt.sign({ uid: googleId, email, name}, APP_JWT_SECRET, {
       expiresIn: "2h",
     });
+
+    let person = await User.findOne({ email });
+    if (!person) {
+      person = new User({ googleId, email, name, picture, honor:10 });
+      await person.save();
+    }
 
     res.json({ token: appToken, user: { email, name, picture } });
 

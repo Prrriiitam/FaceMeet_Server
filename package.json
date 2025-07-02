@@ -13,14 +13,16 @@
     "@react-oauth/google": "^0.12.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "dotenv": "^16.5.0",
+    "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "google-auth-library": "^10.1.0",
     "jsonwebtoken": "^9.0.2",
+    "mongodb": "5.5",
+    "mongoose": "^8.16.1",
     "onnxruntime-node": "^1.22.0-rev",
     "socket.io": "^4.7.5",
     "tokenizers": "^0.13.3",
-    "uuid": "^11.1.0",
-    "tokenizers-linux-x64-gnu": "0.13.4-rc1"
+    "tokenizers-linux-x64-gnu": "0.13.4-rc1",
+    "uuid": "^11.1.0"
   }
 }
